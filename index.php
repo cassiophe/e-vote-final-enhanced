@@ -268,6 +268,21 @@ if (
   </div>
 </div>
 
+<!-- Modal: Mobile Lookup Result -->
+<div class="modal fade" id="mobileResultModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content text-center py-4 px-3">
+      <div id="mobileResultIcon" class="display-4 mb-3 text-primary" aria-hidden="true">
+        <i class="fa-solid fa-circle-info"></i>
+      </div>
+      <h5 id="mobileResultTitle" class="fw-semibold mb-2"></h5>
+      <p id="mobileResultMessage" class="mb-0"></p>
+      <p id="mobileResultSubtext" class="text-muted small mb-0 mt-3 d-none"></p>
+      <button type="button" class="btn btn-primary mt-4 d-none" id="mobileResultCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: New Voter -->
 <div class="modal fade" id="newVoterModal" tabindex="-1" aria-labelledby="newVoterLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -476,7 +491,14 @@ let mobileLookupSpinner;
 let mobileStatusMessage;
 let mobileProceedNewBtn;
 let mobileProceedExistingBtn;
+let mobileResultModal;
+let mobileResultTitle;
+let mobileResultMessage;
+let mobileResultIcon;
+let mobileResultSubtext;
+let mobileResultCloseBtn;
 let lastCheckedMobile = "";
+let autoProceedTimer = null;
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -515,7 +537,88 @@ function setMobileStatus(message, tone = "muted") {
   mobileStatusMessage.innerHTML = message;
 }
 
+function hideMobileResultModal() {
+  try {
+    mobileResultModal?.hide();
+  } catch (err) {
+    console.warn("Unable to hide mobile result modal:", err);
+  }
+}
+
+function showMobileLookupResult({
+  title = "",
+  message = "",
+  tone = "primary",
+  icon,
+  subtext = "",
+  autoProceedCallback = null,
+  autoProceedDelay = 1500
+} = {}) {
+  cancelAutoProceed();
+  const statusTone = tone === "danger" ? "danger" : tone === "success" ? "success" : tone === "info" ? "info" : "info";
+  const shouldShowInlineStatus = !autoProceedCallback || !mobileResultModal;
+  setMobileStatus(shouldShowInlineStatus ? message : "", statusTone);
+  if (!mobileResultModal) {
+    if (autoProceedCallback) {
+      scheduleAutoProceed(autoProceedCallback, autoProceedDelay);
+    }
+    return;
+  }
+
+  hideMobileResultModal();
+
+  const resolvedIcon = icon || (tone === "success"
+    ? "fa-circle-check"
+    : tone === "danger"
+      ? "fa-triangle-exclamation"
+      : "fa-circle-info");
+
+  if (mobileResultIcon) {
+    mobileResultIcon.className = `display-4 mb-3 text-${tone}`;
+    mobileResultIcon.innerHTML = `<i class="fa-solid ${resolvedIcon}"></i>`;
+  }
+
+  if (mobileResultTitle) {
+    mobileResultTitle.textContent = title;
+  }
+
+  if (mobileResultMessage) {
+    mobileResultMessage.innerHTML = message;
+  }
+
+  if (mobileResultSubtext) {
+    if (subtext) {
+      mobileResultSubtext.textContent = subtext;
+      mobileResultSubtext.classList.remove("d-none");
+    } else {
+      mobileResultSubtext.textContent = "";
+      mobileResultSubtext.classList.add("d-none");
+    }
+  }
+
+  if (mobileResultCloseBtn) {
+    if (autoProceedCallback) {
+      mobileResultCloseBtn.classList.add("d-none");
+      mobileResultCloseBtn.disabled = true;
+    } else {
+      mobileResultCloseBtn.classList.remove("d-none");
+      mobileResultCloseBtn.disabled = false;
+    }
+  }
+
+  mobileResultModal.show();
+
+  if (autoProceedCallback) {
+    scheduleAutoProceed(() => {
+      hideMobileResultModal();
+      autoProceedCallback();
+    }, autoProceedDelay);
+  }
+}
+
 function resetMobileLookupState({ clearInput = false } = {}) {
+  cancelAutoProceed();
+  hideMobileResultModal();
   if (clearInput && voterMobileInput) {
     voterMobileInput.value = "";
   }
@@ -529,6 +632,21 @@ function resetMobileLookupState({ clearInput = false } = {}) {
   if (mobileLookupSpinner) mobileLookupSpinner.classList.add("d-none");
   const mobileContinueText = document.getElementById("mobileContinueText");
   if (mobileContinueText) mobileContinueText.textContent = "Check Number";
+}
+
+function cancelAutoProceed() {
+  if (autoProceedTimer) {
+    clearTimeout(autoProceedTimer);
+    autoProceedTimer = null;
+  }
+}
+
+function scheduleAutoProceed(callback, delay = 1500) {
+  cancelAutoProceed();
+  autoProceedTimer = setTimeout(() => {
+    autoProceedTimer = null;
+    callback?.();
+  }, delay);
 }
 
 function handleRecaptchaSolved() {
@@ -681,6 +799,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const voterModalEl = document.getElementById("voterVerificationModal");
   const newVoterModalEl = document.getElementById("newVoterModal");
   const existingVoterModalEl = document.getElementById("existingVoterModal");
+  const mobileResultModalEl = document.getElementById("mobileResultModal");
   const otpModalEl = document.getElementById("otpModal");
   const draftCodeModalEl = document.getElementById("draftCodeModal");
   const incompleteModalEl = document.getElementById("incompleteModal");
@@ -692,6 +811,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   voterModal = new bootstrap.Modal(voterModalEl);
   const newVoterModal = new bootstrap.Modal(newVoterModalEl);
   const existingVoterModal = new bootstrap.Modal(existingVoterModalEl);
+  mobileResultModal = mobileResultModalEl ? new bootstrap.Modal(mobileResultModalEl, { backdrop: "static", keyboard: false }) : null;
   const otpModal = new bootstrap.Modal(otpModalEl);
   const draftCodeModal = new bootstrap.Modal(draftCodeModalEl);
   const incompleteModal = new bootstrap.Modal(incompleteModalEl);
@@ -714,6 +834,19 @@ document.addEventListener("DOMContentLoaded", async () => {
   mobileStatusMessage = document.getElementById("mobileStatusMessage");
   mobileProceedNewBtn = document.getElementById("mobileProceedNewBtn");
   mobileProceedExistingBtn = document.getElementById("mobileProceedExistingBtn");
+  mobileResultIcon = document.getElementById("mobileResultIcon");
+  mobileResultTitle = document.getElementById("mobileResultTitle");
+  mobileResultMessage = document.getElementById("mobileResultMessage");
+  mobileResultSubtext = document.getElementById("mobileResultSubtext");
+  mobileResultCloseBtn = document.getElementById("mobileResultCloseBtn");
+
+  mobileResultCloseBtn?.addEventListener("click", () => {
+    hideMobileResultModal();
+    if (voterMobileInput) {
+      voterMobileInput.focus();
+      if (voterMobileInput.value) voterMobileInput.select();
+    }
+  });
   forgotMobileInput = document.getElementById("forgotMobile");
   sendForgotOtpBtn = document.getElementById("sendForgotOtpBtn");
   sendForgotOtpSpinner = document.getElementById("sendForgotOtpSpinner");
@@ -849,6 +982,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     mobileProceedNewBtn?.classList.add("d-none");
     mobileProceedExistingBtn?.classList.add("d-none");
     lastCheckedMobile = "";
+    cancelAutoProceed();
 
     if (!/^09\d{9}$/.test(mobile)) {
       setMobileStatus("Enter a valid mobile number in 09XXXXXXXXX format.", "danger");
@@ -876,27 +1010,48 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       if (statusData.status === "new") {
         lastCheckedMobile = mobile;
-        setMobileStatus(`We couldn't find <strong>${mobile}</strong> in our records. Continue as a new voter to verify this number.`, "success");
-        mobileProceedNewBtn?.classList.remove("d-none");
-        mobileProceedExistingBtn?.classList.add("d-none");
+        showMobileLookupResult({
+          title: "Mobile Number Available",
+          message: `We couldn't find <strong>${mobile}</strong> in our records. We'll take you to the verification step so you can register this number.`,
+          tone: "success",
+          subtext: "Opening the verification step…",
+          autoProceedCallback: proceedAsNewVoter
+        });
       } else if (statusData.status === "exists") {
         if (Number(statusData.has_voted) === 1) {
-          setMobileStatus(`The mobile number <strong>${mobile}</strong> has already completed the voting process.`, "danger");
+          showMobileLookupResult({
+            title: "Vote Already Submitted",
+            message: `The mobile number <strong>${mobile}</strong> has already completed the voting process.`,
+            tone: "danger"
+          });
         } else {
           lastCheckedMobile = mobile;
-          const message = Number(statusData.has_data) === 1
-            ? `Welcome back! We found saved progress for <strong>${mobile}</strong>. Enter your access code to resume.`
-            : `We found an account for <strong>${mobile}</strong>. Enter your access code to continue.`;
-          setMobileStatus(message, Number(statusData.has_data) === 1 ? "success" : "info");
-          mobileProceedExistingBtn?.classList.remove("d-none");
-          mobileProceedNewBtn?.classList.add("d-none");
+          const hasDraft = Number(statusData.has_data) === 1;
+          const message = hasDraft
+            ? `Welcome back! We found saved progress for <strong>${mobile}</strong>. We'll open the resume dialog so you can continue.`
+            : `We found an account for <strong>${mobile}</strong>. We'll open the resume dialog so you can enter your access code.`;
+          showMobileLookupResult({
+            title: hasDraft ? "Resume Your Vote" : "Existing Voter Found",
+            message,
+            tone: hasDraft ? "success" : "primary",
+            subtext: hasDraft ? "Opening your saved progress…" : "Opening the resume screen…",
+            autoProceedCallback: proceedAsExistingVoter
+          });
         }
       } else {
-        setMobileStatus("We couldn't verify this mobile number. Please try again.", "danger");
+        showMobileLookupResult({
+          title: "Unable to Verify Number",
+          message: "We couldn't verify this mobile number. Please try again.",
+          tone: "danger"
+        });
       }
     } catch (error) {
       console.error("Mobile lookup failed:", error);
-      setMobileStatus("Unable to check the mobile number right now. Please try again shortly.", "danger");
+      showMobileLookupResult({
+        title: "Lookup Unavailable",
+        message: "Unable to check the mobile number right now. Please try again shortly.",
+        tone: "danger"
+      });
       showToast("Unable to check mobile number right now.", "danger");
     } finally {
       if (mobileLookupSpinner) mobileLookupSpinner.classList.add("d-none");
@@ -912,8 +1067,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  mobileProceedNewBtn?.addEventListener("click", () => {
+  const proceedAsNewVoter = () => {
     if (!lastCheckedMobile) return;
+    cancelAutoProceed();
+    hideMobileResultModal();
     if (otpMobileInput) {
       otpMobileInput.value = lastCheckedMobile;
       otpMobileInput.dispatchEvent(new Event("input"));
@@ -927,15 +1084,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     if (otpSentToMobileMessage) otpSentToMobileMessage.textContent = "";
     voterModal.hide();
-    mobileProceedNewBtn.classList.add("d-none");
+    mobileProceedNewBtn?.classList.add("d-none");
     setTimeout(() => {
       otpModal.show();
       initRecaptcha(true);
     }, 200);
-  });
+  };
 
-  mobileProceedExistingBtn?.addEventListener("click", () => {
+  const proceedAsExistingVoter = () => {
     if (!lastCheckedMobile) return;
+    cancelAutoProceed();
+    hideMobileResultModal();
     const existingMobileInput = document.getElementById("existingMobile");
     const loginError = document.getElementById("loginError");
     if (existingMobileInput) {
@@ -948,9 +1107,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     if (loginError) loginError.style.display = "none";
     voterModal.hide();
-    mobileProceedExistingBtn.classList.add("d-none");
+    mobileProceedExistingBtn?.classList.add("d-none");
     setTimeout(() => existingVoterModal.show(), 200);
-  });
+  };
+
+  mobileProceedNewBtn?.addEventListener("click", proceedAsNewVoter);
+  mobileProceedExistingBtn?.addEventListener("click", proceedAsExistingVoter);
 
   const forgotCodeLink = document.getElementById("forgotCodeLink");
   if (forgotCodeLink) {
