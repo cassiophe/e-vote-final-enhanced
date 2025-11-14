@@ -238,20 +238,31 @@ if (
     </footer>
   </div>
 
-<!-- Modal: Voter Selection -->
+<!-- Modal: Mobile Verification -->
 <div class="modal fade" id="voterVerificationModal" tabindex="-1" aria-labelledby="voterVerificationLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content p-3">
-      <div class="modal-header">
-        <h5 class="modal-title">Voter Type</h5>
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-semibold" id="voterVerificationLabel">Verify Your Mobile Number</h5>
       </div>
       <div class="modal-body">
-        <div id="voterQuestion">
-          <div class="d-flex justify-content-center gap-2">
-            <button id="newVoterBtn" class="btn btn-success mb-3 w-100" data-bs-target="#otpModal" data-bs-toggle="modal" data-bs-dismiss="modal">New Voter</button>
-            <button class="btn btn-outline-primary w-100 h-50" data-bs-target="#existingVoterModal" data-bs-toggle="modal" data-bs-dismiss="modal">Existing Voter</button>
-          </div>
+        <p class="text-muted small">Enter the mobile number you used or plan to use for voting. We'll check if it already exists in our records.</p>
+        <div class="mb-3">
+          <label for="voterMobileInput" class="form-label">Mobile Number (09xxxxxxxxx)</label>
+          <input type="tel" id="voterMobileInput" class="form-control" maxlength="11" pattern="09\d{9}" placeholder="Enter mobile number" autocomplete="tel-national">
         </div>
+        <div id="mobileStatusMessage" class="small" role="status"></div>
+      </div>
+      <div class="modal-footer flex-column gap-2 border-0 pt-0">
+        <div class="d-flex w-100 gap-2">
+          <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary flex-fill" id="mobileContinueBtn">
+            <span id="mobileLookupSpinner" class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
+            <span id="mobileContinueText">Check Number</span>
+          </button>
+        </div>
+        <button type="button" class="btn btn-success w-100 d-none" id="mobileProceedNewBtn">Continue as New Voter</button>
+        <button type="button" class="btn btn-outline-primary w-100 d-none" id="mobileProceedExistingBtn">Resume Your Vote</button>
       </div>
     </div>
   </div>
@@ -276,24 +287,27 @@ if (
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="existingVoterLabel">Existing Voter Login</h5>
+        <h5 class="modal-title" id="existingVoterLabel">Resume Your Vote</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body text-start px-4">
+        <div class="alert alert-info small" role="alert" id="existingMobileNotice" style="display: none;"></div>
         <div class="mb-3">
-          <label for="existingMobile" class="form-label fw-bold">Mobile Number (e.g. 09XXXXXXXXX)</label>
-          <input type="text" class="form-control" id="existingMobile" maxlength="11" pattern="[0-9]{11}" placeholder="Enter your mobile number">
+          <label for="existingMobile" class="form-label fw-bold">Mobile Number</label>
+          <input type="tel" class="form-control" id="existingMobile" maxlength="11" pattern="09\d{9}" placeholder="Enter your mobile number" autocomplete="tel-national">
         </div>
         <div class="mb-3">
-          <label for="draftCode" class="form-label fw-bold">Access Code (e.g. 1234)</label>
-          <input type="password" class="form-control" id="draftCode" maxlength="4" placeholder="Enter your 4-digit PIN">
+          <label for="draftCode" class="form-label fw-bold">Access Code (4 digits)</label>
+          <input type="password" class="form-control" id="draftCode" maxlength="4" placeholder="Enter your 4-digit access code">
         </div>
-        <div class="text-center">
-          <button id="checkDraftBtn" class="btn btn-primary px-4">Continue</button>
+        <div class="d-grid">
+          <button id="checkDraftBtn" class="btn btn-primary">Continue</button>
         </div>
         <div id="loginError" class="text-danger text-center mt-2" style="display: none;"></div>
-        <div class="text-center mt-2">
-          <a href="#" id="forgotCodeLink">Forgot Access Code?</a>
+        <div class="text-center mt-2 small">
+          <a href="#" id="changeMobileLink" class="me-2">Use a different mobile number</a>
+          &bull;
+          <a href="#" id="forgotCodeLink">Forgot access code?</a>
         </div>
       </div>
     </div>
@@ -455,6 +469,15 @@ let otpSentToMobileMessage;
 let otpStep1;
 let otpStep2;
 
+// Elements for mobile lookup flow
+let voterMobileInput;
+let mobileContinueBtn;
+let mobileLookupSpinner;
+let mobileStatusMessage;
+let mobileProceedNewBtn;
+let mobileProceedExistingBtn;
+let lastCheckedMobile = "";
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -479,6 +502,33 @@ function setOtpMessage(message, tone = "muted") {
   }
   otpMessage.innerHTML = `<span class="text-${tone}">${message}</span>`;
   otpMessage.style.display = "block";
+}
+
+function setMobileStatus(message, tone = "muted") {
+  if (!mobileStatusMessage) return;
+  if (!message) {
+    mobileStatusMessage.innerHTML = "";
+    mobileStatusMessage.className = "small";
+    return;
+  }
+  mobileStatusMessage.className = `small text-${tone}`;
+  mobileStatusMessage.innerHTML = message;
+}
+
+function resetMobileLookupState({ clearInput = false } = {}) {
+  if (clearInput && voterMobileInput) {
+    voterMobileInput.value = "";
+  }
+  lastCheckedMobile = "";
+  setMobileStatus("");
+  mobileProceedNewBtn?.classList.add("d-none");
+  mobileProceedExistingBtn?.classList.add("d-none");
+  if (mobileContinueBtn) {
+    mobileContinueBtn.disabled = false;
+  }
+  if (mobileLookupSpinner) mobileLookupSpinner.classList.add("d-none");
+  const mobileContinueText = document.getElementById("mobileContinueText");
+  if (mobileContinueText) mobileContinueText.textContent = "Check Number";
 }
 
 function handleRecaptchaSolved() {
@@ -635,6 +685,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const draftCodeModalEl = document.getElementById("draftCodeModal");
   const incompleteModalEl = document.getElementById("incompleteModal");
   const forgotModalEl = document.getElementById("forgotModal");
+  const existingMobileNotice = document.getElementById("existingMobileNotice");
 
   const instructionModal = instructionModalEl ? new bootstrap.Modal(instructionModalEl) : null;
   const introModal = new bootstrap.Modal(introModalEl);
@@ -657,6 +708,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   otpSentToMobileMessage = document.getElementById("otpSentToMobileMessage");
   otpStep1 = document.getElementById("otpStep1");
   otpStep2 = document.getElementById("otpStep2");
+  voterMobileInput = document.getElementById("voterMobileInput");
+  mobileContinueBtn = document.getElementById("mobileContinueBtn");
+  mobileLookupSpinner = document.getElementById("mobileLookupSpinner");
+  mobileStatusMessage = document.getElementById("mobileStatusMessage");
+  mobileProceedNewBtn = document.getElementById("mobileProceedNewBtn");
+  mobileProceedExistingBtn = document.getElementById("mobileProceedExistingBtn");
   forgotMobileInput = document.getElementById("forgotMobile");
   sendForgotOtpBtn = document.getElementById("sendForgotOtpBtn");
   sendForgotOtpSpinner = document.getElementById("sendForgotOtpSpinner");
@@ -712,6 +769,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         const step = otpStep2.classList.contains("d-none") ? "1" : "2";
         localStorage.setItem("otpStep", step);
         initRecaptcha();
+      } else if (el.id === "voterVerificationModal") {
+        resetMobileLookupState({ clearInput: false });
+        setTimeout(() => {
+          if (voterMobileInput) {
+            voterMobileInput.focus();
+            if (voterMobileInput.value) voterMobileInput.select();
+          }
+        }, 200);
       } else if (el.id === "forgotModal") {
         if (window.forgotRecaptchaVerifier && !window.forgotRecaptchaVerifier.grecaptchaWidgetId) {
           window.forgotRecaptchaVerifier.render().then(widgetId => {
@@ -728,6 +793,11 @@ document.addEventListener("DOMContentLoaded", async () => {
           recaptchaInitPending = true;
           recaptchaRetryAttempts = 0;
           setOtpMessage("");
+        } else if (el.id === "voterVerificationModal") {
+          resetMobileLookupState();
+        } else if (el.id === "existingVoterModal" && existingMobileNotice) {
+          existingMobileNotice.style.display = "none";
+          existingMobileNotice.textContent = "";
         }
       }
     });
@@ -770,11 +840,142 @@ document.addEventListener("DOMContentLoaded", async () => {
     proceedBtn.addEventListener("click", showVoterVerificationModal);
   }
 
-  document.getElementById("forgotCodeLink").addEventListener("click", (e) => {
-    e.preventDefault();
-    existingVoterModal.hide();
-    forgotModal.show();
+  const mobileContinueText = document.getElementById("mobileContinueText");
+
+  mobileContinueBtn?.addEventListener("click", async () => {
+    if (!voterMobileInput) return;
+    const mobile = voterMobileInput.value.trim();
+
+    mobileProceedNewBtn?.classList.add("d-none");
+    mobileProceedExistingBtn?.classList.add("d-none");
+    lastCheckedMobile = "";
+
+    if (!/^09\d{9}$/.test(mobile)) {
+      setMobileStatus("Enter a valid mobile number in 09XXXXXXXXX format.", "danger");
+      showToast("Enter a valid mobile number.", "danger");
+      return;
+    }
+
+    mobileContinueBtn.disabled = true;
+    if (mobileLookupSpinner) mobileLookupSpinner.classList.remove("d-none");
+    if (mobileContinueText) mobileContinueText.textContent = "Checking…";
+    setMobileStatus("Checking our records…", "muted");
+
+    try {
+      const statusRes = await fetch("check_mobile_status.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobile_number: mobile })
+      });
+
+      if (!statusRes.ok) {
+        throw new Error("request-failed");
+      }
+
+      const statusData = await statusRes.json();
+
+      if (statusData.status === "new") {
+        lastCheckedMobile = mobile;
+        setMobileStatus(`We couldn't find <strong>${mobile}</strong> in our records. Continue as a new voter to verify this number.`, "success");
+        mobileProceedNewBtn?.classList.remove("d-none");
+        mobileProceedExistingBtn?.classList.add("d-none");
+      } else if (statusData.status === "exists") {
+        if (Number(statusData.has_voted) === 1) {
+          setMobileStatus(`The mobile number <strong>${mobile}</strong> has already completed the voting process.`, "danger");
+        } else {
+          lastCheckedMobile = mobile;
+          const message = Number(statusData.has_data) === 1
+            ? `Welcome back! We found saved progress for <strong>${mobile}</strong>. Enter your access code to resume.`
+            : `We found an account for <strong>${mobile}</strong>. Enter your access code to continue.`;
+          setMobileStatus(message, Number(statusData.has_data) === 1 ? "success" : "info");
+          mobileProceedExistingBtn?.classList.remove("d-none");
+          mobileProceedNewBtn?.classList.add("d-none");
+        }
+      } else {
+        setMobileStatus("We couldn't verify this mobile number. Please try again.", "danger");
+      }
+    } catch (error) {
+      console.error("Mobile lookup failed:", error);
+      setMobileStatus("Unable to check the mobile number right now. Please try again shortly.", "danger");
+      showToast("Unable to check mobile number right now.", "danger");
+    } finally {
+      if (mobileLookupSpinner) mobileLookupSpinner.classList.add("d-none");
+      if (mobileContinueText) mobileContinueText.textContent = "Check Number";
+      mobileContinueBtn.disabled = false;
+    }
   });
+
+  voterMobileInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      mobileContinueBtn?.click();
+    }
+  });
+
+  mobileProceedNewBtn?.addEventListener("click", () => {
+    if (!lastCheckedMobile) return;
+    if (otpMobileInput) {
+      otpMobileInput.value = lastCheckedMobile;
+      otpMobileInput.dispatchEvent(new Event("input"));
+    }
+    otpStep1?.classList.remove("d-none");
+    otpStep2?.classList.add("d-none");
+    setOtpMessage("");
+    if (otpVerifyMessage) {
+      otpVerifyMessage.innerHTML = "";
+      otpVerifyMessage.style.display = "none";
+    }
+    if (otpSentToMobileMessage) otpSentToMobileMessage.textContent = "";
+    voterModal.hide();
+    mobileProceedNewBtn.classList.add("d-none");
+    setTimeout(() => {
+      otpModal.show();
+      initRecaptcha(true);
+    }, 200);
+  });
+
+  mobileProceedExistingBtn?.addEventListener("click", () => {
+    if (!lastCheckedMobile) return;
+    const existingMobileInput = document.getElementById("existingMobile");
+    const loginError = document.getElementById("loginError");
+    if (existingMobileInput) {
+      existingMobileInput.value = lastCheckedMobile;
+      existingMobileInput.focus();
+    }
+    if (existingMobileNotice) {
+      existingMobileNotice.innerHTML = `Continuing as <strong>${lastCheckedMobile}</strong>. Enter your access code to resume your vote.`;
+      existingMobileNotice.style.display = "block";
+    }
+    if (loginError) loginError.style.display = "none";
+    voterModal.hide();
+    mobileProceedExistingBtn.classList.add("d-none");
+    setTimeout(() => existingVoterModal.show(), 200);
+  });
+
+  const forgotCodeLink = document.getElementById("forgotCodeLink");
+  if (forgotCodeLink) {
+    forgotCodeLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      existingVoterModal.hide();
+      forgotModal.show();
+    });
+  }
+
+  const changeMobileLink = document.getElementById("changeMobileLink");
+  if (changeMobileLink) {
+    changeMobileLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      existingVoterModal.hide();
+      setTimeout(() => {
+        voterModal.show();
+        resetMobileLookupState({ clearInput: false });
+        if (voterMobileInput) {
+          voterMobileInput.focus();
+          if (voterMobileInput.value) voterMobileInput.select();
+        }
+      }, 200);
+    });
+  }
 
   // 4. Auto-redirect new voter to category.html after modal shows
   const newVoterModalElShow = document.getElementById("newVoterModal");
@@ -1242,16 +1443,6 @@ checkDraftBtn.addEventListener("click", () => {
       if (headerLogo) headerLogo.src = data.headerLogo;
     });
 
-  // 7. Fallback toggle (optional legacy)
-  const existingVoterBtn = document.getElementById("existingVoterBtn");
-  if (existingVoterBtn) {
-    existingVoterBtn.addEventListener("click", () => {
-      const q = document.getElementById("voterQuestion");
-      const s = document.getElementById("existingVoterSection");
-      if (q) q.style.display = "none";
-      if (s) s.style.display = "block";
-    });
-  }
 });
 
 </script>
