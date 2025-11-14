@@ -1,0 +1,25 @@
+Array
+(
+    [voters_id] => 8
+    [finalized_votes] => Array
+        (
+            [63] => Array
+                (
+                    [choice_id] => 65
+                    [freetext] => 
+                )
+
+        )
+
+    [answers] => Array
+        (
+            [0] => Array
+                (
+                    [question_id] => 63
+                    [choice_id] => 65
+                    [freetext] => 
+                )
+
+        )
+
+)
